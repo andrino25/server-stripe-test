@@ -28,7 +28,7 @@ module.exports = async (req, res) => {
             // Create a payment intent
             const paymentIntent = await stripe.paymentIntents.create({
                 amount: amount,
-                currency: currency,
+                currency: currency, // Ensure this is set to 'php'
                 customer: customer.id, // Link the payment intent with the customer
             });
 
