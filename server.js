@@ -3,7 +3,7 @@ dotenv.config(); // Load the environment variables
 
 const express = require('express');
 const cors = require('cors');
-const stripe = require('stripe')(env.STRIPE_SECRET_KEY); // Use the key after loading dotenv
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY); // Use process.env to access the key
 
 const app = express();
 
@@ -27,7 +27,6 @@ app.post('/create-payment-intent', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-
 
 // Start the server
 const PORT = process.env.PORT || 3000;
