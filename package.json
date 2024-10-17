@@ -74,7 +74,9 @@
     "vary": "^1.1.2"
   },
   "scripts": {
+    "start": "node api/create-payment-intent.js",
     "test": "echo \"Error: no test specified\" && exit 1"
+
   },
   "keywords": [],
   "author": "",
