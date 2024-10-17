@@ -10,23 +10,39 @@ module.exports = async (req, res) => {
     console.log('Request Body:', req.body);
 
     if (req.method === 'POST') {
-        // Handle the POST request
         console.log('Received request:', req.body); // Log request for debugging
-        const { amount, currency } = req.body;
+        const { amount, currency, email } = req.body; // Include email if you need to create a customer
+
         try {
+            // Create or retrieve a customer
+            const customer = await stripe.customers.create({
+                email: email // Use the email from the request body
+            });
+
+            // Create an ephemeral key for the customer
+            const ephemeralKey = await stripe.ephemeralKeys.create(
+                { customer: customer.id },
+                { apiVersion: '2022-11-15' } // Specify the API version
+            );
+
+            // Create a payment intent
             const paymentIntent = await stripe.paymentIntents.create({
                 amount: amount,
                 currency: currency,
+                customer: customer.id, // Link the payment intent with the customer
             });
+
+            // Respond with the client secret, ephemeral key, and customer ID
             res.status(200).json({
                 clientSecret: paymentIntent.client_secret,
+                ephemeralKey: ephemeralKey.secret, // Include ephemeral key
+                customerId: customer.id // Include customer ID
             });
         } catch (err) {
             console.error('Error creating payment intent:', err);
             res.status(500).json({ error: err.message });
         }
     } else {
-        // Handle any other HTTP method (GET, etc.)
         res.setHeader('Allow', ['POST']);
         res.status(405).end(`Method ${req.method} Not Allowed`);
     }
