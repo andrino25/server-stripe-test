@@ -3,7 +3,7 @@ dotenv.config(); // Load the environment variables
 
 const express = require('express');
 const cors = require('cors');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY); // Use the key after loading dotenv
+const stripe = require('stripe')(env.STRIPE_SECRET_KEY); // Use the key after loading dotenv
 
 const app = express();
 
@@ -11,7 +11,7 @@ app.use(cors());
 app.use(express.json()); // To parse JSON bodies
 
 // Create a PaymentIntent
-app.post('/api/create-payment-intent', async (req, res) => {
+app.post('/create-payment-intent', async (req, res) => {
     const { amount, currency } = req.body;
     try {
         const paymentIntent = await stripe.paymentIntents.create({
