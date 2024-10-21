@@ -11,7 +11,9 @@ module.exports = async (req, res) => {
 
     if (req.method === 'POST') {
         console.log('Received request:', req.body); // Log request for debugging
-        const { amount, currency, email } = req.body; // Include email if you need to create a customer
+        
+        // Destructure additional parameters
+        const { amount, currency, email, providerEmail, serviceOffered } = req.body;
 
         try {
             // Create or retrieve a customer
@@ -25,11 +27,15 @@ module.exports = async (req, res) => {
                 { apiVersion: '2022-11-15' } // Specify the API version
             );
 
-            // Create a payment intent
+            // Create a payment intent with additional metadata
             const paymentIntent = await stripe.paymentIntents.create({
                 amount: amount,
                 currency: currency, // Ensure this is set to 'php'
                 customer: customer.id, // Link the payment intent with the customer
+                metadata: {
+                    providerEmail: providerEmail, // Store provider email
+                    serviceOffered: serviceOffered // Store service offered
+                }
             });
 
             // Respond with the client secret, ephemeral key, and customer ID
