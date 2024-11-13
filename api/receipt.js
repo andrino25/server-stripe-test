@@ -30,15 +30,18 @@ module.exports = async (req, res) => {
             });
         }
 
-        // Create invoice with send_invoice collection method
+        // Create invoice with more detailed information
         const invoice = await stripe.invoices.create({
             customer: paymentIntent.customer,
             collection_method: 'send_invoice',
             days_until_due: 30,
             custom_fields: [
                 { name: 'Service', value: paymentIntent.metadata.serviceOffered || 'Service' },
-                { name: 'Amount', value: `PHP ${paymentIntent.amount / 100}` }
-            ]
+                { name: 'Payment Date', value: paymentIntent.metadata.paymentDate || new Date().toISOString() },
+                { name: 'Original Amount', value: `PHP ${paymentIntent.metadata.originalAmountPHP || (paymentIntent.amount / 100)}` },
+                { name: 'Payment ID', value: paymentId }
+            ],
+            description: `Receipt for ${paymentIntent.metadata.serviceOffered || 'Service'}`
         });
 
         // Finalize and send
@@ -47,7 +50,13 @@ module.exports = async (req, res) => {
 
         return res.status(200).json({ 
             message: 'Receipt sent successfully',
-            sentTo: providerEmail
+            sentTo: providerEmail,
+            details: {
+                service: paymentIntent.metadata.serviceOffered,
+                amount: paymentIntent.amount / 100,
+                paymentDate: paymentIntent.metadata.paymentDate,
+                invoiceId: invoice.id
+            }
         });
 
     } catch (err) {
