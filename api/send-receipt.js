@@ -4,8 +4,30 @@ dotenv.config();
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 module.exports = async (req, res) => {
+    // Add debug logging
+    console.log('Request received:', {
+        method: req.method,
+        url: req.url,
+        body: req.body
+    });
+
+    // Add CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    // Handle OPTIONS request for CORS
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+
     if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
+        console.log('Method not allowed:', req.method);
+        return res.status(405).json({ 
+            error: 'Method not allowed',
+            method: req.method,
+            allowedMethods: ['POST']
+        });
     }
 
     const { paymentId } = req.body;
