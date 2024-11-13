@@ -12,11 +12,21 @@ module.exports = async (req, res) => {
     if (req.method === 'POST') {
         const { amount, currency, email, providerEmail, serviceOffered } = req.body;
 
+        // Validate currency
+        if (currency.toLowerCase() !== 'php') {
+            return res.status(400).json({ 
+                error: 'Only PHP currency is supported' 
+            });
+        }
+
         try {
+            // Convert amount to centavos if needed (multiply by 100)
+            const amountInCentavos = Math.round(amount * 100);
+            
             // Calculate commission (15%)
             const commissionRate = 0.15;
-            const commissionAmount = Math.round(amount * commissionRate);
-            const totalAmount = amount + commissionAmount; // Total amount including commission
+            const commissionAmountCentavos = Math.round(amountInCentavos * commissionRate);
+            const totalAmountCentavos = amountInCentavos + commissionAmountCentavos;
 
             // Create or retrieve a customer
             const customer = await stripe.customers.create({
@@ -31,17 +41,21 @@ module.exports = async (req, res) => {
 
             // Create a payment intent with commission details in metadata
             const paymentIntent = await stripe.paymentIntents.create({
-                amount: totalAmount, // Using total amount including commission
-                currency: currency,
+                amount: totalAmountCentavos,
+                currency: 'php',
                 customer: customer.id,
                 metadata: {
                     providerEmail: providerEmail,
                     serviceOffered: serviceOffered,
-                    originalAmount: amount,
-                    commissionAmount: commissionAmount,
+                    originalAmount: amountInCentavos,
+                    commissionAmount: commissionAmountCentavos,
                     commissionRate: `${commissionRate * 100}%`,
                     paymentDate: new Date().toISOString(),
                     paymentMethod: req.body.paymentMethod || 'card',
+                    // Store original amounts in PHP for readability
+                    originalAmountPHP: amount,
+                    commissionAmountPHP: amount * commissionRate,
+                    totalAmountPHP: amount + (amount * commissionRate)
                 }
             });
 
@@ -52,10 +66,11 @@ module.exports = async (req, res) => {
                 paymentId: paymentIntent.id,
                 paymentMethod: paymentIntent.metadata.paymentMethod,
                 paymentDate: paymentIntent.metadata.paymentDate,
+                // Return amounts in PHP for easier reading
                 originalAmount: amount,
-                commissionAmount: commissionAmount,
-                totalAmount: totalAmount,
-                currency: paymentIntent.currency,
+                commissionAmount: amount * commissionRate,
+                totalAmount: amount + (amount * commissionRate),
+                currency: 'php',
                 status: paymentIntent.status
             });
 
@@ -76,20 +91,24 @@ module.exports = async (req, res) => {
             // Retrieve the payment intent to get metadata
             const paymentIntent = await stripe.paymentIntents.retrieve(paymentId);
             
+            // Check payment status
             if (paymentIntent.status !== 'succeeded') {
                 return res.status(400).json({ 
-                    error: 'Cannot send receipt for incomplete payment' 
+                    error: 'Cannot send receipt for incomplete payment',
+                    status: paymentIntent.status
                 });
             }
 
+            // Verify provider email exists
             const providerEmail = paymentIntent.metadata.providerEmail;
             if (!providerEmail) {
                 return res.status(400).json({ 
-                    error: 'Provider email not found in payment metadata' 
+                    error: 'Provider email not found in payment metadata',
+                    metadata: paymentIntent.metadata
                 });
             }
 
-            // Create a receipt using Stripe's invoices
+            // Create and send receipt
             const invoice = await stripe.invoices.create({
                 customer: paymentIntent.customer,
                 auto_advance: true,
@@ -97,17 +116,15 @@ module.exports = async (req, res) => {
                 metadata: paymentIntent.metadata,
                 custom_fields: [
                     { name: 'Service', value: paymentIntent.metadata.serviceOffered },
-                    { name: 'Original Amount', value: `${paymentIntent.metadata.originalAmount}` },
-                    { name: 'Commission Amount', value: `${paymentIntent.metadata.commissionAmount}` },
+                    { name: 'Original Amount (PHP)', value: `${paymentIntent.metadata.originalAmountPHP}` },
+                    { name: 'Commission Amount (PHP)', value: `${paymentIntent.metadata.commissionAmountPHP}` },
                     { name: 'Commission Rate', value: paymentIntent.metadata.commissionRate }
                 ]
             });
 
             await stripe.invoices.finalizeInvoice(invoice.id);
-
-            // Send to provider's email specifically
             await stripe.invoices.sendInvoice(invoice.id, {
-                email: providerEmail // Explicitly send to provider's email
+                email: providerEmail
             });
 
             res.status(200).json({ 
@@ -115,9 +132,9 @@ module.exports = async (req, res) => {
                 invoiceId: invoice.id,
                 sentTo: providerEmail,
                 paymentDetails: {
-                    originalAmount: paymentIntent.metadata.originalAmount,
-                    commissionAmount: paymentIntent.metadata.commissionAmount,
-                    totalAmount: paymentIntent.amount,
+                    originalAmount: paymentIntent.metadata.originalAmountPHP,
+                    commissionAmount: paymentIntent.metadata.commissionAmountPHP,
+                    totalAmount: paymentIntent.amount / 100, // Convert centavos back to PHP
                     serviceOffered: paymentIntent.metadata.serviceOffered,
                     paymentDate: paymentIntent.metadata.paymentDate
                 }
@@ -125,7 +142,10 @@ module.exports = async (req, res) => {
 
         } catch (err) {
             console.error('Error sending receipt:', err);
-            res.status(500).json({ error: err.message });
+            res.status(500).json({ 
+                error: err.message,
+                paymentId: paymentId
+            });
         }
     } else {
         res.setHeader('Allow', ['POST']);
