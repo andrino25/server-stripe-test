@@ -72,13 +72,17 @@ module.exports = async (req, res) => {
             });
         }
 
+        // Set due date to 30 days from now
+        const dueDate = Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60); // 30 days in seconds
+
         // Create and send receipt
         const invoice = await stripe.invoices.create({
             customer: paymentIntent.customer,
             auto_advance: true,
             collection_method: 'send_invoice',
+            due_date: dueDate, // Add due date
             metadata: paymentIntent.metadata,
-            custom_fields: customFields // Only include fields that exist
+            custom_fields: customFields
         });
 
         await stripe.invoices.finalizeInvoice(invoice.id);
@@ -99,7 +103,8 @@ module.exports = async (req, res) => {
             message: 'Receipt sent successfully',
             invoiceId: invoice.id,
             sentTo: providerEmail,
-            paymentDetails: responseDetails
+            paymentDetails: responseDetails,
+            dueDate: new Date(dueDate * 1000).toISOString() // Convert timestamp to ISO date
         });
 
     } catch (err) {
