@@ -13,7 +13,7 @@ module.exports = async (req, res) => {
         console.log('Received request:', req.body); // Log request for debugging
         
         // Destructure additional parameters
-        const { amount, currency, email, providerEmail, serviceOffered } = req.body;
+        const { amount, currency, email, providerEmail, serviceOffered, serviceAmount, commissionAmount, commissionRate } = req.body;
 
         try {
             // Create or retrieve a customer
@@ -27,22 +27,33 @@ module.exports = async (req, res) => {
                 { apiVersion: '2022-11-15' } // Specify the API version
             );
 
-            // Create a payment intent with additional metadata
+            // Create a payment intent with commission details in metadata
             const paymentIntent = await stripe.paymentIntents.create({
                 amount: amount,
-                currency: currency, // Ensure this is set to 'php'
-                customer: customer.id, // Link the payment intent with the customer
+                currency: currency,
+                customer: customer.id,
                 metadata: {
-                    providerEmail: providerEmail, // Store provider email
-                    serviceOffered: serviceOffered // Store service offered
+                    providerEmail: providerEmail,
+                    serviceOffered: serviceOffered,
+                    serviceAmount: serviceAmount,
+                    commissionAmount: commissionAmount,
+                    commissionRate: `${commissionRate * 100}%`,
+                    paymentDate: new Date().toISOString(), // Add payment date
+                    paymentMethod: req.body.paymentMethod || 'card', // Add payment method
                 }
             });
 
-            // Respond with the client secret, ephemeral key, and customer ID
+            // Respond with additional payment details
             res.status(200).json({
                 clientSecret: paymentIntent.client_secret,
-                ephemeralKey: ephemeralKey.secret, // Include ephemeral key
-                customerId: customer.id // Include customer ID
+                ephemeralKey: ephemeralKey.secret,
+                customerId: customer.id,
+                paymentId: paymentIntent.id,
+                paymentMethod: paymentIntent.metadata.paymentMethod,
+                paymentDate: paymentIntent.metadata.paymentDate,
+                amount: paymentIntent.amount,
+                currency: paymentIntent.currency,
+                status: paymentIntent.status
             });
         } catch (err) {
             console.error('Error creating payment intent:', err);
