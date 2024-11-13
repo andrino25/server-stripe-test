@@ -66,8 +66,14 @@ module.exports = async (req, res) => {
     } else if (req.method === 'POST' && req.url.endsWith('/send-receipt')) {
         const { paymentId } = req.body;
 
+        if (!paymentId) {
+            return res.status(400).json({ 
+                error: 'Payment ID is required' 
+            });
+        }
+
         try {
-            // Retrieve the payment intent
+            // Retrieve the payment intent to get metadata
             const paymentIntent = await stripe.paymentIntents.retrieve(paymentId);
             
             if (paymentIntent.status !== 'succeeded') {
@@ -76,26 +82,45 @@ module.exports = async (req, res) => {
                 });
             }
 
+            const providerEmail = paymentIntent.metadata.providerEmail;
+            if (!providerEmail) {
+                return res.status(400).json({ 
+                    error: 'Provider email not found in payment metadata' 
+                });
+            }
+
             // Create a receipt using Stripe's invoices
             const invoice = await stripe.invoices.create({
                 customer: paymentIntent.customer,
                 auto_advance: true,
+                collection_method: 'send_invoice',
                 metadata: paymentIntent.metadata,
                 custom_fields: [
                     { name: 'Service', value: paymentIntent.metadata.serviceOffered },
+                    { name: 'Original Amount', value: `${paymentIntent.metadata.originalAmount}` },
+                    { name: 'Commission Amount', value: `${paymentIntent.metadata.commissionAmount}` },
                     { name: 'Commission Rate', value: paymentIntent.metadata.commissionRate }
                 ]
             });
 
             await stripe.invoices.finalizeInvoice(invoice.id);
 
-            // Send to provider's email
-            await stripe.invoices.sendInvoice(invoice.id);
+            // Send to provider's email specifically
+            await stripe.invoices.sendInvoice(invoice.id, {
+                email: providerEmail // Explicitly send to provider's email
+            });
 
             res.status(200).json({ 
                 message: 'Receipt sent successfully',
                 invoiceId: invoice.id,
-                sentTo: paymentIntent.metadata.providerEmail
+                sentTo: providerEmail,
+                paymentDetails: {
+                    originalAmount: paymentIntent.metadata.originalAmount,
+                    commissionAmount: paymentIntent.metadata.commissionAmount,
+                    totalAmount: paymentIntent.amount,
+                    serviceOffered: paymentIntent.metadata.serviceOffered,
+                    paymentDate: paymentIntent.metadata.paymentDate
+                }
             });
 
         } catch (err) {
