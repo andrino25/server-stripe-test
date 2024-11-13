@@ -1,4 +1,3 @@
-
 const dotenv = require('dotenv');
 dotenv.config();
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -42,18 +41,44 @@ module.exports = async (req, res) => {
             });
         }
 
+        // Prepare custom fields with validation
+        const customFields = [];
+        
+        if (paymentIntent.metadata.serviceOffered) {
+            customFields.push({ 
+                name: 'Service', 
+                value: paymentIntent.metadata.serviceOffered 
+            });
+        }
+
+        if (paymentIntent.metadata.originalAmountPHP) {
+            customFields.push({ 
+                name: 'Original Amount (PHP)', 
+                value: `${paymentIntent.metadata.originalAmountPHP}` 
+            });
+        }
+
+        if (paymentIntent.metadata.commissionAmountPHP) {
+            customFields.push({ 
+                name: 'Commission Amount (PHP)', 
+                value: `${paymentIntent.metadata.commissionAmountPHP}` 
+            });
+        }
+
+        if (paymentIntent.metadata.commissionRate) {
+            customFields.push({ 
+                name: 'Commission Rate', 
+                value: paymentIntent.metadata.commissionRate 
+            });
+        }
+
         // Create and send receipt
         const invoice = await stripe.invoices.create({
             customer: paymentIntent.customer,
             auto_advance: true,
             collection_method: 'send_invoice',
             metadata: paymentIntent.metadata,
-            custom_fields: [
-                { name: 'Service', value: paymentIntent.metadata.serviceOffered },
-                { name: 'Original Amount (PHP)', value: `${paymentIntent.metadata.originalAmountPHP}` },
-                { name: 'Commission Amount (PHP)', value: `${paymentIntent.metadata.commissionAmountPHP}` },
-                { name: 'Commission Rate', value: paymentIntent.metadata.commissionRate }
-            ]
+            custom_fields: customFields // Only include fields that exist
         });
 
         await stripe.invoices.finalizeInvoice(invoice.id);
@@ -61,17 +86,20 @@ module.exports = async (req, res) => {
             email: providerEmail
         });
 
+        // Calculate response values safely
+        const responseDetails = {
+            originalAmount: paymentIntent.metadata.originalAmountPHP || 0,
+            commissionAmount: paymentIntent.metadata.commissionAmountPHP || 0,
+            totalAmount: paymentIntent.amount ? paymentIntent.amount / 100 : 0,
+            serviceOffered: paymentIntent.metadata.serviceOffered || 'Not specified',
+            paymentDate: paymentIntent.metadata.paymentDate || new Date().toISOString()
+        };
+
         return res.status(200).json({ 
             message: 'Receipt sent successfully',
             invoiceId: invoice.id,
             sentTo: providerEmail,
-            paymentDetails: {
-                originalAmount: paymentIntent.metadata.originalAmountPHP,
-                commissionAmount: paymentIntent.metadata.commissionAmountPHP,
-                totalAmount: paymentIntent.amount / 100,
-                serviceOffered: paymentIntent.metadata.serviceOffered,
-                paymentDate: paymentIntent.metadata.paymentDate
-            }
+            paymentDetails: responseDetails
         });
 
     } catch (err) {
