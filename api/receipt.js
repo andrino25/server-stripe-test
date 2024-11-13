@@ -9,7 +9,7 @@ module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
     if (req.method === 'OPTIONS') {
-        return res.status(200).end(); // Handle preflight requests
+        return res.status(200).end();
     }
 
     if (req.method !== 'POST') {
@@ -72,23 +72,20 @@ module.exports = async (req, res) => {
             });
         }
 
-        // Set due date to 30 days from now
-        const dueDate = Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60); // 30 days in seconds
-
-        // Create and send receipt
+        // Create invoice
         const invoice = await stripe.invoices.create({
             customer: paymentIntent.customer,
             auto_advance: true,
-            collection_method: 'send_invoice',
-            due_date: dueDate, // Add due date
             metadata: paymentIntent.metadata,
-            custom_fields: customFields
+            custom_fields: customFields,
+            // Add the provider email to the invoice
+            account_tax_ids: [],  // Required for some invoice operations
+            default_tax_rates: [], // Required for some invoice operations
         });
 
+        // Finalize and send the invoice
         await stripe.invoices.finalizeInvoice(invoice.id);
-        await stripe.invoices.sendInvoice(invoice.id, {
-            email: providerEmail
-        });
+        await stripe.invoices.sendInvoice(invoice.id); // Removed email parameter
 
         // Calculate response values safely
         const responseDetails = {
@@ -103,8 +100,7 @@ module.exports = async (req, res) => {
             message: 'Receipt sent successfully',
             invoiceId: invoice.id,
             sentTo: providerEmail,
-            paymentDetails: responseDetails,
-            dueDate: new Date(dueDate * 1000).toISOString() // Convert timestamp to ISO date
+            paymentDetails: responseDetails
         });
 
     } catch (err) {
