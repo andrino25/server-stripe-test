@@ -10,40 +10,41 @@ module.exports = async (req, res) => {
     console.log('Request Body:', req.body);
 
     if (req.method === 'POST') {
-        console.log('Received request:', req.body); // Log request for debugging
-        
-        // Destructure additional parameters
-        const { amount, currency, email, providerEmail, serviceOffered, serviceAmount, commissionAmount, commissionRate } = req.body;
+        const { amount, currency, email, providerEmail, serviceOffered } = req.body;
 
         try {
+            // Calculate commission (15%)
+            const commissionRate = 0.15;
+            const commissionAmount = Math.round(amount * commissionRate);
+            const totalAmount = amount + commissionAmount; // Total amount including commission
+
             // Create or retrieve a customer
             const customer = await stripe.customers.create({
-                email: email // Use the email from the request body
+                email: email
             });
 
             // Create an ephemeral key for the customer
             const ephemeralKey = await stripe.ephemeralKeys.create(
                 { customer: customer.id },
-                { apiVersion: '2022-11-15' } // Specify the API version
+                { apiVersion: '2022-11-15' }
             );
 
             // Create a payment intent with commission details in metadata
             const paymentIntent = await stripe.paymentIntents.create({
-                amount: amount,
+                amount: totalAmount, // Using total amount including commission
                 currency: currency,
                 customer: customer.id,
                 metadata: {
                     providerEmail: providerEmail,
                     serviceOffered: serviceOffered,
-                    serviceAmount: serviceAmount,
+                    originalAmount: amount,
                     commissionAmount: commissionAmount,
                     commissionRate: `${commissionRate * 100}%`,
-                    paymentDate: new Date().toISOString(), // Add payment date
-                    paymentMethod: req.body.paymentMethod || 'card', // Add payment method
+                    paymentDate: new Date().toISOString(),
+                    paymentMethod: req.body.paymentMethod || 'card',
                 }
             });
 
-            // Respond with additional payment details
             res.status(200).json({
                 clientSecret: paymentIntent.client_secret,
                 ephemeralKey: ephemeralKey.secret,
@@ -51,12 +52,54 @@ module.exports = async (req, res) => {
                 paymentId: paymentIntent.id,
                 paymentMethod: paymentIntent.metadata.paymentMethod,
                 paymentDate: paymentIntent.metadata.paymentDate,
-                amount: paymentIntent.amount,
+                originalAmount: amount,
+                commissionAmount: commissionAmount,
+                totalAmount: totalAmount,
                 currency: paymentIntent.currency,
                 status: paymentIntent.status
             });
+
         } catch (err) {
             console.error('Error creating payment intent:', err);
+            res.status(500).json({ error: err.message });
+        }
+    } else if (req.method === 'POST' && req.url.endsWith('/send-receipt')) {
+        const { paymentId } = req.body;
+
+        try {
+            // Retrieve the payment intent
+            const paymentIntent = await stripe.paymentIntents.retrieve(paymentId);
+            
+            if (paymentIntent.status !== 'succeeded') {
+                return res.status(400).json({ 
+                    error: 'Cannot send receipt for incomplete payment' 
+                });
+            }
+
+            // Create a receipt using Stripe's invoices
+            const invoice = await stripe.invoices.create({
+                customer: paymentIntent.customer,
+                auto_advance: true,
+                metadata: paymentIntent.metadata,
+                custom_fields: [
+                    { name: 'Service', value: paymentIntent.metadata.serviceOffered },
+                    { name: 'Commission Rate', value: paymentIntent.metadata.commissionRate }
+                ]
+            });
+
+            await stripe.invoices.finalizeInvoice(invoice.id);
+
+            // Send to provider's email
+            await stripe.invoices.sendInvoice(invoice.id);
+
+            res.status(200).json({ 
+                message: 'Receipt sent successfully',
+                invoiceId: invoice.id,
+                sentTo: paymentIntent.metadata.providerEmail
+            });
+
+        } catch (err) {
+            console.error('Error sending receipt:', err);
             res.status(500).json({ error: err.message });
         }
     } else {
