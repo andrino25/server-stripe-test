@@ -3,15 +3,6 @@ dotenv.config();
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 module.exports = async (req, res) => {
-    // Add CORS headers
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    if (req.method === 'OPTIONS') {
-        return res.status(200).end();
-    }
-
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
@@ -23,91 +14,44 @@ module.exports = async (req, res) => {
     }
 
     try {
-        // Retrieve the payment intent
+        // Get payment details
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentId);
 
         if (paymentIntent.status !== 'succeeded') {
             return res.status(400).json({ 
-                error: 'Cannot send receipt for incomplete payment',
-                status: paymentIntent.status
+                error: 'Cannot send receipt for incomplete payment'
             });
         }
 
         const providerEmail = paymentIntent.metadata.providerEmail;
         if (!providerEmail) {
             return res.status(400).json({ 
-                error: 'Provider email not found in payment metadata',
-                metadata: paymentIntent.metadata
+                error: 'Provider email not found in metadata'
             });
         }
 
-        // Prepare custom fields with validation
-        const customFields = [];
-        
-        if (paymentIntent.metadata.serviceOffered) {
-            customFields.push({ 
-                name: 'Service', 
-                value: paymentIntent.metadata.serviceOffered 
-            });
-        }
-
-        if (paymentIntent.metadata.originalAmountPHP) {
-            customFields.push({ 
-                name: 'Original Amount (PHP)', 
-                value: `${paymentIntent.metadata.originalAmountPHP}` 
-            });
-        }
-
-        if (paymentIntent.metadata.commissionAmountPHP) {
-            customFields.push({ 
-                name: 'Commission Amount (PHP)', 
-                value: `${paymentIntent.metadata.commissionAmountPHP}` 
-            });
-        }
-
-        if (paymentIntent.metadata.commissionRate) {
-            customFields.push({ 
-                name: 'Commission Rate', 
-                value: paymentIntent.metadata.commissionRate 
-            });
-        }
-
-        // Create invoice
+        // Create invoice with send_invoice collection method
         const invoice = await stripe.invoices.create({
             customer: paymentIntent.customer,
-            auto_advance: true,
-            metadata: paymentIntent.metadata,
-            custom_fields: customFields,
-            // Add the provider email to the invoice
-            account_tax_ids: [],  // Required for some invoice operations
-            default_tax_rates: [], // Required for some invoice operations
+            collection_method: 'send_invoice',
+            days_until_due: 30,
+            custom_fields: [
+                { name: 'Service', value: paymentIntent.metadata.serviceOffered || 'Service' },
+                { name: 'Amount', value: `PHP ${paymentIntent.amount / 100}` }
+            ]
         });
 
-        // Finalize and send the invoice
+        // Finalize and send
         await stripe.invoices.finalizeInvoice(invoice.id);
-        await stripe.invoices.sendInvoice(invoice.id); // Removed email parameter
-
-        // Calculate response values safely
-        const responseDetails = {
-            originalAmount: paymentIntent.metadata.originalAmountPHP || 0,
-            commissionAmount: paymentIntent.metadata.commissionAmountPHP || 0,
-            totalAmount: paymentIntent.amount ? paymentIntent.amount / 100 : 0,
-            serviceOffered: paymentIntent.metadata.serviceOffered || 'Not specified',
-            paymentDate: paymentIntent.metadata.paymentDate || new Date().toISOString()
-        };
+        await stripe.invoices.sendInvoice(invoice.id);
 
         return res.status(200).json({ 
             message: 'Receipt sent successfully',
-            invoiceId: invoice.id,
-            sentTo: providerEmail,
-            paymentDetails: responseDetails
+            sentTo: providerEmail
         });
 
     } catch (err) {
-        console.error('Error sending receipt:', err);
-        return res.status(500).json({ 
-            error: err.message,
-            paymentId: paymentId
-        });
+        console.error('Error:', err);
+        return res.status(500).json({ error: err.message });
     }
 };
