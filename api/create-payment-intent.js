@@ -3,13 +3,20 @@ dotenv.config(); // Load environment variables from .env
 
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY); // Use process.env for your Stripe secret
 
+// At the start of your file, add URL parsing
+const url = require('url');
+
 // This is the handler function that Vercel will call
 module.exports = async (req, res) => {
+    // Parse the URL to handle different endpoints
+    const parsedUrl = url.parse(req.url, true);
+    const path = parsedUrl.pathname;
+
     console.log("Stripe Secret Key:", process.env.STRIPE_SECRET_KEY); // Log secret key for debugging
     console.log('Request Method:', req.method);
     console.log('Request Body:', req.body);
 
-    if (req.method === 'POST') {
+    if (req.method === 'POST' && path === '/api/create-payment-intent') {
         const { amount, currency, email, providerEmail, serviceOffered } = req.body;
 
         // Validate currency
@@ -78,7 +85,7 @@ module.exports = async (req, res) => {
             console.error('Error creating payment intent:', err);
             res.status(500).json({ error: err.message });
         }
-    } else if (req.method === 'POST' && req.url.endsWith('/send-receipt')) {
+    } else if (req.method === 'POST' && path === '/api/create-payment-intent/send-receipt') {
         const { paymentId } = req.body;
 
         if (!paymentId) {
@@ -88,10 +95,9 @@ module.exports = async (req, res) => {
         }
 
         try {
-            // Retrieve the payment intent to get metadata
+            // Retrieve the payment intent
             const paymentIntent = await stripe.paymentIntents.retrieve(paymentId);
             
-            // Check payment status
             if (paymentIntent.status !== 'succeeded') {
                 return res.status(400).json({ 
                     error: 'Cannot send receipt for incomplete payment',
