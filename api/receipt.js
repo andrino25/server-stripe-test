@@ -65,12 +65,15 @@ async function sendReceipt(paymentId) {
 const bookingsRef = db.ref('bookings');
 
 bookingsRef.on('child_changed', async (snapshot) => {
+    console.log(`Booking changed: ${snapshot.key}`, snapshot.val());
     const booking = snapshot.val();
 
     // Check if booking status is Completed and contains a payment ID
     if (booking.bookingStatus === 'Completed' && booking.bookingPaymentId) {
-        console.log(`Processing completed booking: ${snapshot.key}`);
-
+        console.log(`Attempting to send receipt for booking ${snapshot.key}`);
+        const sent = await sendReceipt(booking.bookingPaymentId);
+        console.log(`Receipt sent status for booking ${snapshot.key}:`, sent);
+    
         try {
             // Send the receipt by calling the sendReceipt function
             const sent = await sendReceipt(booking.bookingPaymentId);
