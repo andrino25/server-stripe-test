@@ -105,7 +105,7 @@ async function generateReceipt(paymentIntent) {
             doc.text(`Service: ${paymentIntent.metadata.serviceOffered || 'Service'}`, leftX)
                .moveDown(0.5);
             
-            doc.text(`Provider: ${paymentIntent.metadata.providerName || 'Provider'}`, leftX)
+            doc.text(`Provider: ${paymentIntent.metadata.providerEmail || 'Provider'}`, leftX)
                .moveDown(0.5);
 
             // Payment details in a box
@@ -113,32 +113,24 @@ async function generateReceipt(paymentIntent) {
             const paymentY = doc.y + 20;
 
             doc.text('Payment Details:', leftX + 10, paymentY, { bold: true })
-               .moveDown(0.5);
-            
-            doc.text(`Amount Paid:`, leftX + 10)
-               .text(`PHP ${paymentIntent.metadata.originalAmountPHP || (paymentIntent.amount / 100)}`, rightX)
-               .moveDown(0.5);
-            
-            doc.text(`Payment Date:`, leftX + 10)
-               .text(`${paymentIntent.metadata.paymentDate || new Date().toISOString()}`, rightX)
-               .moveDown(0.5);
-            
-            doc.text(`Payment Method:`, leftX + 10)
-               .text('Credit Card', rightX)
-               .moveDown(2);
+            .moveDown(0.5);
+
+            doc.text(`Amount Paid: PHP ${paymentIntent.metadata.originalAmountPHP || (paymentIntent.amount / 100)}`, leftX + 10)
+            .moveDown(0.5);
+
+            doc.text(`Payment Date: ${paymentIntent.metadata.paymentDate || new Date().toISOString()}`, leftX + 10)
+            .moveDown(0.5);
+
+            doc.text(`Payment Method: Credit Card`, leftX + 10)
+            .moveDown(0.5);
 
             // Footer
             doc.fontSize(10)
                .text('Thank you for your business!', { align: 'center' })
                .moveDown(0.5);
             
-            doc.text('For any questions, please contact support@yourcompany.com', { align: 'center' })
+            doc.text('For any questions, please contact peopleconnect@company.com', { align: 'center' })
                .moveDown(0.5);
-            
-            doc.text('This is a computer-generated receipt and requires no signature.', { 
-                align: 'center',
-                italics: true 
-            });
 
             doc.end();
         } catch (err) {
