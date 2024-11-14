@@ -110,48 +110,16 @@ async function sendReceipt(paymentId) {
     }
 }
 
-// Scan all bookings function
-async function scanBookings() {
-    try {
-        // 1. Check existing "Completed" bookings
-        const snapshot = await get(ref(database, 'bookings'));
-        const bookings = snapshot.val();
-        console.log('Found bookings:', bookings);
-
-        // 2. For each Completed booking
-        Object.entries(bookings).forEach(([id, booking]) => {
-            if (booking.bookingStatus === 'Completed') {
-                console.log('Found Completed booking:', id);
-                console.log('Payment ID:', booking.bookingPaymentId);
-            }
-        });
-
-        for (const [bookingId, booking] of Object.entries(bookings)) {
-            if (booking.bookingStatus === 'Completed' && 
-                booking.bookingPaymentId && 
-                !booking.receiptSent) {
-                
-                console.log('🟢 Processing completed booking:', bookingId);
-                const sent = await sendReceipt(booking.bookingPaymentId);
-                
-                if (sent) {
-                    const bookingRef = ref(database, `bookings/${bookingId}`);
-                    await update(bookingRef, {
-                        receiptSent: true,
-                        receiptSentDate: new Date().toISOString()
-                    });
-                    console.log('✅ Receipt sent and booking updated:', bookingId);
-                }
-            }
-        }
-    } catch (err) {
-        console.error('❌ Error scanning bookings:', err);
-    }
-}
-
 // Listen for changes
 onChildChanged(bookingsRef, async (snapshot) => {
     const booking = snapshot.val();
+    console.log('🔵 Booking change detected:', {
+        id: snapshot.key,
+        status: booking.bookingStatus,
+        paymentId: booking.bookingPaymentId
+    });
+
+    // Check if this booking is Completed and hasn't received a receipt
     if (booking.bookingStatus === 'Completed' && 
         booking.bookingPaymentId && 
         !booking.receiptSent) {
@@ -172,12 +140,6 @@ onChildChanged(bookingsRef, async (snapshot) => {
 
 // API endpoint
 module.exports = async (req, res) => {
-    if (req.method === 'GET') {
-        // Trigger manual scan of all bookings
-        await scanBookings();
-        return res.status(200).json({ message: 'Scan completed' });
-    }
-
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
