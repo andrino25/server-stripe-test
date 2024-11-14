@@ -42,6 +42,7 @@ module.exports = async (req, res) => {
             currency: 'php',
             customer: customer.id,
             metadata: {
+                customerEmail: email,
                 providerEmail: providerEmail,
                 serviceOffered: serviceOffered,
                 commissionAmount: commissionAmountCentavos,
@@ -62,6 +63,8 @@ module.exports = async (req, res) => {
             clientSecret: paymentIntent.client_secret,
             ephemeralKey: ephemeralKey.secret,
             customerId: customer.id,
+            customerEmail: customer.email,
+            providerEmail: paymentIntent.metadata.providerEmail,
             paymentId: paymentIntent.id,
             paymentMethod: paymentIntent.metadata.paymentMethod,
             paymentDate: paymentIntent.metadata.paymentDate,
