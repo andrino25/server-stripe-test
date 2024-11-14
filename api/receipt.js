@@ -4,6 +4,8 @@ dotenv.config();
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, onChildChanged, get, update } = require('firebase/database');
+const PDFDocument = require('pdfkit');
+const nodemailer = require('nodemailer');
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -23,33 +25,46 @@ const database = getDatabase(app);
 // Reference to bookings
 const bookingsRef = ref(database, 'bookings');
 
-// Add Firebase listener for booking changes
-onChildChanged(bookingsRef, async (snapshot) => {
-    console.log('🔵 Booking changed detected:', snapshot.key);
-    const booking = snapshot.val();
-
-    // Check if status is Completed and has payment ID
-    if (booking.bookingStatus === 'Completed' && booking.bookingPaymentId) {
-        console.log('🟢 Processing completed booking:', snapshot.key);
-        try {
-            const sent = await sendReceipt(booking.bookingPaymentId);
-            if (sent) {
-                // Update booking with receipt status
-                const bookingRef = ref(database, `bookings/${snapshot.key}`);
-                await update(bookingRef, {
-                    receiptSent: true,
-                    receiptSentDate: new Date().toISOString()
-                });
-                console.log('✅ Receipt sent and booking updated:', snapshot.key);
-            }
-        } catch (err) {
-            console.error('❌ Error processing booking:', snapshot.key, err);
-        }
+// Initialize nodemailer
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD
     }
 });
 
+async function generateReceipt(paymentIntent) {
+    return new Promise((resolve, reject) => {
+        try {
+            const doc = new PDFDocument();
+            const chunks = [];
+
+            doc.on('data', chunk => chunks.push(chunk));
+            doc.on('end', () => resolve(Buffer.concat(chunks)));
+
+            // Add receipt content
+            doc.fontSize(20).text('Payment Receipt', { align: 'center' });
+            doc.moveDown();
+            doc.fontSize(12).text(`Date: ${new Date().toLocaleDateString()}`);
+            doc.text(`Receipt No: ${paymentIntent.id}`);
+            doc.moveDown();
+            doc.text(`Service: ${paymentIntent.metadata.serviceOffered || 'Service'}`);
+            doc.text(`Amount Paid: PHP ${paymentIntent.metadata.originalAmountPHP || (paymentIntent.amount / 100)}`);
+            doc.text(`Payment Date: ${paymentIntent.metadata.paymentDate || new Date().toISOString()}`);
+            doc.text(`Status: Payment Successful`);
+            doc.moveDown();
+            doc.text('Thank you for using our service!', { align: 'center' });
+
+            doc.end();
+        } catch (err) {
+            reject(err);
+        }
+    });
+}
+
 async function sendReceipt(paymentId) {
-    console.log('🟡 Starting receipt send process for payment:', paymentId);
+    console.log('🟡 Starting receipt process for payment:', paymentId);
     try {
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentId);
         console.log('📌 Retrieved payment intent:', {
@@ -69,30 +84,23 @@ async function sendReceipt(paymentId) {
             return false;
         }
 
-        // Create customer for the provider
-        console.log('🟡 Creating customer for:', providerEmail);
-        let customer = await stripe.customers.create({
-            email: providerEmail,
-            metadata: { isProvider: true }
-        });
+        // Generate PDF receipt
+        console.log('🟡 Generating receipt PDF...');
+        const pdfBuffer = await generateReceipt(paymentIntent);
 
-        // Create and send invoice
-        console.log('🟡 Creating invoice...');
-        const invoice = await stripe.invoices.create({
-            customer: customer.id,
-            collection_method: 'send_invoice',
-            days_until_due: 30,
-            custom_fields: [
-                { name: 'Service', value: paymentIntent.metadata.serviceOffered || 'Service' },
-                { name: 'Payment Date', value: paymentIntent.metadata.paymentDate || new Date().toISOString() },
-                { name: 'Original Amount', value: `PHP ${paymentIntent.metadata.originalAmountPHP || (paymentIntent.amount / 100)}` },
-                { name: 'Payment ID', value: paymentId }
-            ],
-            description: `Receipt for ${paymentIntent.metadata.serviceOffered || 'Service'}`
+        // Send email with PDF attachment
+        console.log('🟡 Sending receipt email...');
+        await transporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: providerEmail,
+            subject: 'Payment Receipt',
+            text: `Thank you for using our service. Please find your payment receipt attached.`,
+            attachments: [{
+                filename: 'receipt.pdf',
+                content: pdfBuffer,
+                contentType: 'application/pdf'
+            }]
         });
-
-        await stripe.invoices.finalizeInvoice(invoice.id);
-        await stripe.invoices.sendInvoice(invoice.id);
 
         console.log('✅ Receipt sent successfully to:', providerEmail);
         return true;
@@ -102,8 +110,64 @@ async function sendReceipt(paymentId) {
     }
 }
 
-// Handle both manual requests and booking status changes
+// Scan all bookings function
+async function scanBookings() {
+    try {
+        const snapshot = await get(ref(database, 'bookings'));
+        const bookings = snapshot.val();
+
+        for (const [bookingId, booking] of Object.entries(bookings)) {
+            if (booking.bookingStatus === 'Completed' && 
+                booking.bookingPaymentId && 
+                !booking.receiptSent) {
+                
+                console.log('🟢 Processing completed booking:', bookingId);
+                const sent = await sendReceipt(booking.bookingPaymentId);
+                
+                if (sent) {
+                    const bookingRef = ref(database, `bookings/${bookingId}`);
+                    await update(bookingRef, {
+                        receiptSent: true,
+                        receiptSentDate: new Date().toISOString()
+                    });
+                    console.log('✅ Receipt sent and booking updated:', bookingId);
+                }
+            }
+        }
+    } catch (err) {
+        console.error('❌ Error scanning bookings:', err);
+    }
+}
+
+// Listen for changes
+onChildChanged(bookingsRef, async (snapshot) => {
+    const booking = snapshot.val();
+    if (booking.bookingStatus === 'Completed' && 
+        booking.bookingPaymentId && 
+        !booking.receiptSent) {
+        
+        console.log('🟢 Processing completed booking:', snapshot.key);
+        const sent = await sendReceipt(booking.bookingPaymentId);
+        
+        if (sent) {
+            const bookingRef = ref(database, `bookings/${snapshot.key}`);
+            await update(bookingRef, {
+                receiptSent: true,
+                receiptSentDate: new Date().toISOString()
+            });
+            console.log('✅ Receipt sent and booking updated:', snapshot.key);
+        }
+    }
+});
+
+// API endpoint
 module.exports = async (req, res) => {
+    if (req.method === 'GET') {
+        // Trigger manual scan of all bookings
+        await scanBookings();
+        return res.status(200).json({ message: 'Scan completed' });
+    }
+
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
