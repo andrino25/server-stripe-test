@@ -115,7 +115,7 @@ async function generateReceipt(paymentIntent) {
             doc.text('Payment Details:', leftX + 10, paymentY, { bold: true })
             .moveDown(0.5);
 
-            doc.text(`Amount Paid: PHP ${paymentIntent.metadata.originalAmountPHP || (paymentIntent.amount / 100)}`, leftX + 10)
+            doc.text(`Amount Paid: PHP ${paymentIntent.metadata.providerReceievedPHP || (paymentIntent.amount / 100)}`, leftX + 10)
             .moveDown(0.5);
 
             doc.text(`Payment Date: ${paymentIntent.metadata.paymentDate || new Date().toISOString()}`, leftX + 10)

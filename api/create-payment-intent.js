@@ -44,15 +44,18 @@ module.exports = async (req, res) => {
             metadata: {
                 providerEmail: providerEmail,
                 serviceOffered: serviceOffered,
-                originalAmount: amountInCentavos,
                 commissionAmount: commissionAmountCentavos,
                 commissionRate: `${commissionRate * 100}%`,
-                paymentDate: new Date().toISOString(),
+                paymentDate: new Date().toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                }),
                 paymentMethod: req.body.paymentMethod || 'card',
                 originalAmountPHP: amount,
-                commissionAmountPHP: amount * commissionRate,
+                providerReceievedPHP: amount - (amount * commissionRate),
                 totalAmountPHP: amount + (amount * commissionRate)
-            }
+            }            
         });
 
         res.status(200).json({
