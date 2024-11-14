@@ -43,7 +43,7 @@ async function sendReceipt(paymentId) {
             return false;
         }
 
-        // Create an invoice with detailed information, including metadata fields
+
         const invoice = await stripe.invoices.create({
             customer: paymentIntent.customer,
             collection_method: 'send_invoice',
