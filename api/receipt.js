@@ -5,6 +5,7 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, onChildChanged, get, update } = require('firebase/database');
 const PDFDocument = require('pdfkit');
+const path = require('path');
 const nodemailer = require('nodemailer');
 
 // Your Firebase configuration
