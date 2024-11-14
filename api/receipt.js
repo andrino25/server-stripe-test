@@ -1,36 +1,40 @@
 const dotenv = require('dotenv');
 dotenv.config();
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const admin = require('firebase-admin');
 
-module.exports = async (req, res) => {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
-    }
+// Initialize Firebase Admin
+if (!admin.apps.length) {
+    admin.initializeApp({
+        credential: admin.credential.cert({
+            projectId: process.env.FIREBASE_PROJECT_ID,
+            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+            privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
+        }),
+        databaseURL: process.env.FIREBASE_DATABASE_URL
+    });
+}
 
-    const { paymentId } = req.body;
+const db = admin.database();
 
-    if (!paymentId) {
-        return res.status(400).json({ error: 'Payment ID is required' });
-    }
-
+// Function to send receipt
+async function sendReceipt(paymentId) {
     try {
         // Get payment details
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentId);
 
         if (paymentIntent.status !== 'succeeded') {
-            return res.status(400).json({ 
-                error: 'Cannot send receipt for incomplete payment'
-            });
+            console.log(`Payment ${paymentId} not succeeded, skipping receipt`);
+            return;
         }
 
         const providerEmail = paymentIntent.metadata.providerEmail;
         if (!providerEmail) {
-            return res.status(400).json({ 
-                error: 'Provider email not found in metadata'
-            });
+            console.log(`No provider email found for payment ${paymentId}`);
+            return;
         }
 
-        // Create invoice with more detailed information
+        // Create invoice with detailed information
         const invoice = await stripe.invoices.create({
             customer: paymentIntent.customer,
             collection_method: 'send_invoice',
@@ -48,17 +52,65 @@ module.exports = async (req, res) => {
         await stripe.invoices.finalizeInvoice(invoice.id);
         await stripe.invoices.sendInvoice(invoice.id);
 
-        return res.status(200).json({ 
-            message: 'Receipt sent successfully',
-            sentTo: providerEmail,
-            details: {
-                service: paymentIntent.metadata.serviceOffered,
-                amount: paymentIntent.amount / 100,
-                paymentDate: paymentIntent.metadata.paymentDate,
-                invoiceId: invoice.id
-            }
-        });
+        console.log(`Receipt sent successfully to ${providerEmail} for payment ${paymentId}`);
+        return true;
+    } catch (err) {
+        console.error(`Error sending receipt for payment ${paymentId}:`, err);
+        return false;
+    }
+}
 
+// Listen for changes in bookings
+const bookingsRef = db.ref('bookings');
+
+bookingsRef.on('child_changed', async (snapshot) => {
+    const booking = snapshot.val();
+    
+    // Check if booking status is Completed and has a payment ID
+    if (booking.bookingStatus === 'Completed' && booking.bookingPaymentId) {
+        console.log(`Processing completed booking: ${snapshot.key}`);
+        
+        try {
+            // Send receipt
+            const sent = await sendReceipt(booking.bookingPaymentId);
+            
+            if (sent) {
+                // Update booking to mark receipt as sent (optional)
+                await snapshot.ref.update({
+                    receiptSent: true,
+                    receiptSentDate: new Date().toISOString()
+                });
+            }
+        } catch (err) {
+            console.error(`Error processing booking ${snapshot.key}:`, err);
+        }
+    }
+});
+
+// Keep the original endpoint for manual receipt sending
+module.exports = async (req, res) => {
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
+    }
+
+    const { paymentId } = req.body;
+
+    if (!paymentId) {
+        return res.status(400).json({ error: 'Payment ID is required' });
+    }
+
+    try {
+        const sent = await sendReceipt(paymentId);
+        
+        if (sent) {
+            return res.status(200).json({ 
+                message: 'Receipt sent successfully'
+            });
+        } else {
+            return res.status(400).json({ 
+                error: 'Failed to send receipt'
+            });
+        }
     } catch (err) {
         console.error('Error:', err);
         return res.status(500).json({ error: err.message });
