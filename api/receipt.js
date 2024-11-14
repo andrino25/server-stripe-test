@@ -108,6 +108,9 @@ async function generateReceipt(paymentIntent) {
             doc.text(`Provider: ${paymentIntent.metadata.providerEmail || 'Provider'}`, leftX)
                .moveDown(0.5);
 
+            doc.text(`Client: ${paymentIntent.customer?.email || 'Client'}`, leftX)
+               .moveDown(0.5);
+
             // Payment details in a box
             doc.rect(50, doc.y, 500, 100).stroke();
             const paymentY = doc.y + 20;
@@ -142,10 +145,15 @@ async function generateReceipt(paymentIntent) {
 async function sendReceipt(paymentId) {
     console.log('🟡 Starting receipt process for payment:', paymentId);
     try {
-        const paymentIntent = await stripe.paymentIntents.retrieve(paymentId);
+        // Add expand: ['customer'] to get customer details
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentId, {
+            expand: ['customer']
+        });
+        
         console.log('📌 Retrieved payment intent:', {
             status: paymentIntent.status,
-            email: paymentIntent.metadata.providerEmail,
+            providerEmail: paymentIntent.metadata.providerEmail,
+            customerEmail: paymentIntent.customer?.email,
             amount: paymentIntent.amount
         });
 
@@ -155,8 +163,10 @@ async function sendReceipt(paymentId) {
         }
 
         const providerEmail = paymentIntent.metadata.providerEmail;
-        if (!providerEmail) {
-            console.log('❌ No provider email found:', paymentId);
+        const customerEmail = paymentIntent.customer?.email;
+
+        if (!providerEmail || !customerEmail) {
+            console.log('❌ Missing email addresses:', { providerEmail, customerEmail });
             return false;
         }
 
@@ -164,21 +174,36 @@ async function sendReceipt(paymentId) {
         console.log('🟡 Generating receipt PDF...');
         const pdfBuffer = await generateReceipt(paymentIntent);
 
-        // Send email with PDF attachment
-        console.log('🟡 Sending receipt email...');
-        await transporter.sendMail({
-            from: process.env.EMAIL_USER,
-            to: providerEmail,
-            subject: 'Payment Receipt',
-            text: `Thank you for using our service. Please find your payment receipt attached.`,
-            attachments: [{
-                filename: 'receipt.pdf',
-                content: pdfBuffer,
-                contentType: 'application/pdf'
-            }]
-        });
+        // Send email to both provider and customer
+        console.log('🟡 Sending receipt emails...');
+        await Promise.all([
+            // Send to provider
+            transporter.sendMail({
+                from: process.env.EMAIL_USER,
+                to: providerEmail,
+                subject: 'Payment Receipt',
+                text: `Thank you for providing your service. Please find your payment receipt attached.`,
+                attachments: [{
+                    filename: 'receipt.pdf',
+                    content: pdfBuffer,
+                    contentType: 'application/pdf'
+                }]
+            }),
+            // Send to customer
+            transporter.sendMail({
+                from: process.env.EMAIL_USER,
+                to: customerEmail,
+                subject: 'Payment Receipt',
+                text: `Thank you for using our service. Please find your payment receipt attached.`,
+                attachments: [{
+                    filename: 'receipt.pdf',
+                    content: pdfBuffer,
+                    contentType: 'application/pdf'
+                }]
+            })
+        ]);
 
-        console.log('✅ Receipt sent successfully to:', providerEmail);
+        console.log('✅ Receipt sent successfully to:', { providerEmail, customerEmail });
         return true;
     } catch (err) {
         console.error('❌ Error sending receipt:', err);
