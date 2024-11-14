@@ -47,8 +47,8 @@ async function generateReceipt(paymentIntent) {
             doc.on('end', () => resolve(Buffer.concat(chunks)));
 
             // Add company logo
-            doc.image('./image.png', 50, 45, { width: 150 })  
-               .moveDown();
+            doc.image('../image.png', 50, 45, { width: 150 })  
+                .moveDown();
 
             // Add receipt header
             doc.fontSize(20)
