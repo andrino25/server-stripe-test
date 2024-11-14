@@ -1,21 +1,8 @@
 const dotenv = require('dotenv');
 dotenv.config();
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const admin = require('firebase-admin');
 
-// Initialize Firebase Admin
-if (!admin.apps.length) {
-    admin.initializeApp({
-        credential: admin.credential.cert({
-            projectId: process.env.FIREBASE_PROJECT_ID,
-            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-            privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
-        }),
-        databaseURL: process.env.FIREBASE_DATABASE_URL
-    });
-}
-
-const db = admin.database();
+const stripe = require('./stripe'); // Import the stripe instance
+const db = require('./firebase'); // Import the firebase database instance
 
 // Function to send receipt
 async function sendReceipt(paymentId) {
@@ -26,13 +13,13 @@ async function sendReceipt(paymentId) {
         // Only proceed if the payment is successful
         if (paymentIntent.status !== 'succeeded') {
             console.log(`Payment ${paymentId} not succeeded, skipping receipt`);
-            return;
+            return false;
         }
 
         const providerEmail = paymentIntent.metadata.providerEmail;
         if (!providerEmail) {
             console.log(`No provider email found for payment ${paymentId}`);
-            return;
+            return false;
         }
 
         // Create an invoice with detailed information, including metadata fields
@@ -71,12 +58,9 @@ bookingsRef.on('child_changed', async (snapshot) => {
     // Check if booking status is Completed and contains a payment ID
     if (booking.bookingStatus === 'Completed' && booking.bookingPaymentId) {
         console.log(`Attempting to send receipt for booking ${snapshot.key}`);
-        const sent = await sendReceipt(booking.bookingPaymentId);
-        console.log(`Receipt sent status for booking ${snapshot.key}:`, sent);
-    
         try {
-            // Send the receipt by calling the sendReceipt function
             const sent = await sendReceipt(booking.bookingPaymentId);
+            console.log(`Receipt sent status for booking ${snapshot.key}:`, sent);
 
             if (sent) {
                 // Update the booking to mark that receipt has been sent (optional)
