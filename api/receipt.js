@@ -1,8 +1,29 @@
 const dotenv = require('dotenv');
 dotenv.config();
 
-const stripe = require('./stripe'); // Import the stripe instance
-const db = require('./firebase'); // Import the firebase database instance
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const admin = require('firebase-admin');
+
+// Initialize Firebase Admin
+if (!admin.apps.length) {
+    admin.initializeApp({
+        credential: admin.credential.cert({
+            type: process.env.FIREBASE_TYPE,
+            project_id: process.env.FIREBASE_PROJECT_ID,
+            private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+            private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),  // Ensure correct formatting
+            client_email: process.env.FIREBASE_CLIENT_EMAIL,
+            client_id: process.env.FIREBASE_CLIENT_ID,
+            auth_uri: process.env.FIREBASE_AUTH_URI,
+            token_uri: process.env.FIREBASE_TOKEN_URI,
+            auth_provider_x509_cert_url: process.env.FIREBASE_AUTH_PROVIDER_X509_CERT_URL,
+            client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL
+        }),
+        databaseURL: process.env.FIREBASE_DATABASE_URL
+    });
+}
+
+const db = admin.database();
 
 // Function to send receipt
 async function sendReceipt(paymentId) {
@@ -33,7 +54,10 @@ async function sendReceipt(paymentId) {
                 { name: 'Original Amount', value: `PHP ${paymentIntent.metadata.originalAmountPHP || (paymentIntent.amount / 100)}` },
                 { name: 'Payment ID', value: paymentId }
             ],
-            description: `Receipt for ${paymentIntent.metadata.serviceOffered || 'Service'}`
+            description: `Receipt for ${paymentIntent.metadata.serviceOffered || 'Service'}`,
+            billing: {
+                email: providerEmail // Set the provider email for billing
+            }
         });
 
         // Finalize and send the invoice to the provider's email
