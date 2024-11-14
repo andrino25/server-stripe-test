@@ -98,7 +98,7 @@ async function generateReceipt(paymentIntent) {
             doc.text(`Payment Status: Successful`, leftX)
                .moveDown(2);
 
-            // Service details
+            // Service details with both emails
             doc.text('Service Details:', leftX, doc.y, { bold: true })
                .moveDown(0.5);
             
@@ -108,21 +108,24 @@ async function generateReceipt(paymentIntent) {
             doc.text(`Provider: ${paymentIntent.metadata.providerEmail || 'Provider'}`, leftX)
                .moveDown(0.5);
 
+            doc.text(`Client: ${paymentIntent.metadata.customerEmail || paymentIntent.customer?.email || 'Client'}`, leftX)
+               .moveDown(0.5);
+
             // Payment details in a box
             doc.rect(50, doc.y, 500, 100).stroke();
             const paymentY = doc.y + 20;
 
             doc.text('Payment Details:', leftX + 10, paymentY, { bold: true })
-            .moveDown(0.5);
+               .moveDown(0.5);
 
             doc.text(`Amount Paid: PHP ${paymentIntent.metadata.providerReceievedPHP || (paymentIntent.amount / 100)}`, leftX + 10)
-            .moveDown(0.5);
+               .moveDown(0.5);
 
             doc.text(`Payment Date: ${paymentIntent.metadata.paymentDate || new Date().toISOString()}`, leftX + 10)
-            .moveDown(0.5);
+               .moveDown(0.5);
 
             doc.text(`Payment Method: Credit Card`, leftX + 10)
-            .moveDown(0.5);
+               .moveDown(0.5);
 
             // Footer
             doc.fontSize(10)
