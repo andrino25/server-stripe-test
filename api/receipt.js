@@ -2,33 +2,29 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const admin = require('firebase-admin');
+const { initializeApp } = require('firebase/app');
+const { getDatabase, ref, onChildChanged, get, update } = require('firebase/database');
 
-// Initialize Firebase Admin
-if (!admin.apps.length) {
-    admin.initializeApp({
-        credential: admin.credential.cert({
-            type: process.env.FIREBASE_TYPE,
-            project_id: process.env.FIREBASE_PROJECT_ID,
-            private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
-            private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-            client_email: process.env.FIREBASE_CLIENT_EMAIL,
-            client_id: process.env.FIREBASE_CLIENT_ID,
-            auth_uri: process.env.FIREBASE_AUTH_URI,
-            token_uri: process.env.FIREBASE_TOKEN_URI,
-            auth_provider_x509_cert_url: process.env.FIREBASE_AUTH_PROVIDER_X509_CERT_URL,
-            client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL
-        }),
-        databaseURL: process.env.FIREBASE_DATABASE_URL
-    });
-}
+// Your Firebase configuration
+const firebaseConfig = {
+    apiKey: process.env.FIREBASE_API_KEY,
+    authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+    databaseURL: process.env.FIREBASE_DATABASE_URL,
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.FIREBASE_APP_ID
+};
 
-const db = admin.database();
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const database = getDatabase(app);
 
-const bookingsRef = db.ref('bookings');
+// Reference to bookings
+const bookingsRef = ref(database, 'bookings');
 
 // Add Firebase listener for booking changes
-bookingsRef.on('child_changed', async (snapshot) => {
+onChildChanged(bookingsRef, async (snapshot) => {
     console.log('🔵 Booking changed detected:', snapshot.key);
     const booking = snapshot.val();
 
@@ -39,7 +35,8 @@ bookingsRef.on('child_changed', async (snapshot) => {
             const sent = await sendReceipt(booking.bookingPaymentId);
             if (sent) {
                 // Update booking with receipt status
-                await snapshot.ref.update({
+                const bookingRef = ref(database, `bookings/${snapshot.key}`);
+                await update(bookingRef, {
                     receiptSent: true,
                     receiptSentDate: new Date().toISOString()
                 });
@@ -119,8 +116,8 @@ module.exports = async (req, res) => {
             console.log('🔵 Processing booking status change:', bookingId);
             
             // Get the booking data
-            const bookingRef = db.ref(`bookings/${bookingId}`);
-            const snapshot = await bookingRef.once('value');
+            const bookingRef = ref(database, `bookings/${bookingId}`);
+            const snapshot = await get(bookingRef);
             const booking = snapshot.val();
 
             if (booking && booking.bookingStatus === 'Completed' && booking.bookingPaymentId) {
@@ -128,7 +125,7 @@ module.exports = async (req, res) => {
                 const sent = await sendReceipt(booking.bookingPaymentId);
                 
                 if (sent) {
-                    await bookingRef.update({
+                    await update(bookingRef, {
                         receiptSent: true,
                         receiptSentDate: new Date().toISOString()
                     });
