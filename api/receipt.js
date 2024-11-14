@@ -113,8 +113,18 @@ async function sendReceipt(paymentId) {
 // Scan all bookings function
 async function scanBookings() {
     try {
+        // 1. Check existing "Completed" bookings
         const snapshot = await get(ref(database, 'bookings'));
         const bookings = snapshot.val();
+        console.log('Found bookings:', bookings);
+
+        // 2. For each Completed booking
+        Object.entries(bookings).forEach(([id, booking]) => {
+            if (booking.bookingStatus === 'Completed') {
+                console.log('Found Completed booking:', id);
+                console.log('Payment ID:', booking.bookingPaymentId);
+            }
+        });
 
         for (const [bookingId, booking] of Object.entries(bookings)) {
             if (booking.bookingStatus === 'Completed' && 
