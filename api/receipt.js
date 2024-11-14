@@ -228,11 +228,11 @@ async function startContinuousScanning() {
     // Run first scan immediately
     await scanBookings();
     
-    // Set up interval for subsequent scans (every 5 minutes)
+    // Set up interval for subsequent scans (every 5 seconds)
     setInterval(async () => {
         console.log('⏰ Running scheduled scan...');
         await scanBookings();
-    }, 1 * 60 * 1000); // 5 minutes in milliseconds
+    }, 5 * 1000); // 5 seconds in milliseconds
 }
 
 // Start the continuous scanning when the server starts
