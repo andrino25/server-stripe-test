@@ -37,24 +37,94 @@ const transporter = nodemailer.createTransport({
 async function generateReceipt(paymentIntent) {
     return new Promise((resolve, reject) => {
         try {
-            const doc = new PDFDocument();
-            const chunks = [];
+            const doc = new PDFDocument({
+                size: 'A4',
+                margin: 50
+            });
 
+            const chunks = [];
             doc.on('data', chunk => chunks.push(chunk));
             doc.on('end', () => resolve(Buffer.concat(chunks)));
 
-            // Add receipt content
-            doc.fontSize(20).text('Payment Receipt', { align: 'center' });
-            doc.moveDown();
-            doc.fontSize(12).text(`Date: ${new Date().toLocaleDateString()}`);
-            doc.text(`Receipt No: ${paymentIntent.id}`);
-            doc.moveDown();
-            doc.text(`Service: ${paymentIntent.metadata.serviceOffered || 'Service'}`);
-            doc.text(`Amount Paid: PHP ${paymentIntent.metadata.originalAmountPHP || (paymentIntent.amount / 100)}`);
-            doc.text(`Payment Date: ${paymentIntent.metadata.paymentDate || new Date().toISOString()}`);
-            doc.text(`Status: Payment Successful`);
-            doc.moveDown();
-            doc.text('Thank you for using our service!', { align: 'center' });
+            // Add company logo
+            doc.image('api/image.png', 50, 45, { width: 100 })  
+               .moveDown();
+
+            // Add receipt header
+            doc.fontSize(20)
+               .text('PAYMENT RECEIPT', { align: 'center' })
+               .moveDown();
+
+            // Add horizontal line
+            doc.moveTo(50, 160)
+               .lineTo(550, 160)
+               .stroke()
+               .moveDown();
+
+            // Receipt details in a more structured format
+            doc.fontSize(12);
+
+            // Left column
+            const leftX = 50;
+            const rightX = 300;
+            
+            doc.text('Receipt Details:', leftX, 180, { bold: true })
+               .moveDown(0.5);
+            
+            doc.text(`Receipt No: ${paymentIntent.id}`, leftX)
+               .moveDown(0.5);
+            
+            doc.text(`Date: ${new Date().toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            })}`, leftX)
+               .moveDown(0.5);
+
+            doc.text(`Payment Status: Successful`, leftX)
+               .moveDown(2);
+
+            // Service details
+            doc.text('Service Details:', leftX, doc.y, { bold: true })
+               .moveDown(0.5);
+            
+            doc.text(`Service: ${paymentIntent.metadata.serviceOffered || 'Service'}`, leftX)
+               .moveDown(0.5);
+            
+            doc.text(`Provider: ${paymentIntent.metadata.providerName || 'Provider'}`, leftX)
+               .moveDown(0.5);
+
+            // Payment details in a box
+            doc.rect(50, doc.y, 500, 100).stroke();
+            const paymentY = doc.y + 20;
+
+            doc.text('Payment Details:', leftX + 10, paymentY, { bold: true })
+               .moveDown(0.5);
+            
+            doc.text(`Amount Paid:`, leftX + 10)
+               .text(`PHP ${paymentIntent.metadata.originalAmountPHP || (paymentIntent.amount / 100)}`, rightX)
+               .moveDown(0.5);
+            
+            doc.text(`Payment Date:`, leftX + 10)
+               .text(`${paymentIntent.metadata.paymentDate || new Date().toISOString()}`, rightX)
+               .moveDown(0.5);
+            
+            doc.text(`Payment Method:`, leftX + 10)
+               .text('Credit Card', rightX)
+               .moveDown(2);
+
+            // Footer
+            doc.fontSize(10)
+               .text('Thank you for your business!', { align: 'center' })
+               .moveDown(0.5);
+            
+            doc.text('For any questions, please contact support@yourcompany.com', { align: 'center' })
+               .moveDown(0.5);
+            
+            doc.text('This is a computer-generated receipt and requires no signature.', { 
+                align: 'center',
+                italics: true 
+            });
 
             doc.end();
         } catch (err) {
@@ -110,83 +180,70 @@ async function sendReceipt(paymentId) {
     }
 }
 
-// Listen for changes
-onChildChanged(bookingsRef, async (snapshot) => {
-    const booking = snapshot.val();
-    console.log('🔵 Booking change detected:', {
-        id: snapshot.key,
-        status: booking.bookingStatus,
-        paymentId: booking.bookingPaymentId
-    });
-
-    // Check if this booking is Completed and hasn't received a receipt
-    if (booking.bookingStatus === 'Completed' && 
-        booking.bookingPaymentId && 
-        !booking.receiptSent) {
-        
-        console.log('🟢 Processing completed booking:', snapshot.key);
-        const sent = await sendReceipt(booking.bookingPaymentId);
-        
-        if (sent) {
-            const bookingRef = ref(database, `bookings/${snapshot.key}`);
-            await update(bookingRef, {
-                receiptSent: true,
-                receiptSentDate: new Date().toISOString()
-            });
-            console.log('✅ Receipt sent and booking updated:', snapshot.key);
-        }
-    }
-});
-
-// API endpoint
-module.exports = async (req, res) => {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
-    }
-
+// Scan all bookings function
+async function scanBookings() {
     try {
-        const { paymentId, bookingId, type } = req.body;
+        console.log('🔍 Starting booking scan...');
+        const snapshot = await get(ref(database, 'bookings'));
+        const bookings = snapshot.val();
+        
+        if (!bookings) {
+            console.log('ℹ️ No bookings found');
+            return;
+        }
 
-        // If it's a booking status change
-        if (type === 'bookingStatusChange' && bookingId) {
-            console.log('🔵 Processing booking status change:', bookingId);
+        console.log(`📦 Found ${Object.keys(bookings).length} total bookings`);
+
+        for (const [bookingId, booking] of Object.entries(bookings)) {
+            console.log(`\n🔍 Checking booking: ${bookingId}`);
             
-            // Get the booking data
-            const bookingRef = ref(database, `bookings/${bookingId}`);
-            const snapshot = await get(bookingRef);
-            const booking = snapshot.val();
-
-            if (booking && booking.bookingStatus === 'Completed' && booking.bookingPaymentId) {
+            if (booking.bookingStatus === 'Completed' && 
+                booking.bookingPaymentId && 
+                !booking.receiptSent) {
+                
                 console.log('🟢 Processing completed booking:', bookingId);
                 const sent = await sendReceipt(booking.bookingPaymentId);
                 
                 if (sent) {
+                    const bookingRef = ref(database, `bookings/${bookingId}`);
                     await update(bookingRef, {
                         receiptSent: true,
                         receiptSentDate: new Date().toISOString()
                     });
-                    return res.status(200).json({ 
-                        message: 'Receipt sent successfully for booking'
-                    });
+                    console.log('✅ Receipt sent and booking updated:', bookingId);
                 }
             }
         }
-        // If it's a manual receipt send
-        else if (paymentId) {
-            const sent = await sendReceipt(paymentId);
-            if (sent) {
-                return res.status(200).json({ 
-                    message: 'Receipt sent successfully'
-                });
-            }
-        }
-
-        return res.status(400).json({ 
-            error: 'Failed to send receipt'
-        });
-
+        
+        console.log('\n✅ Scan completed');
     } catch (err) {
-        console.error('Error:', err);
-        return res.status(500).json({ error: err.message });
+        console.error('❌ Error scanning bookings:', err);
     }
+}
+
+// Function to run continuous scanning
+async function startContinuousScanning() {
+    console.log('🚀 Starting continuous booking scanner...');
+    
+    // Run first scan immediately
+    await scanBookings();
+    
+    // Set up interval for subsequent scans (every 5 minutes)
+    setInterval(async () => {
+        console.log('⏰ Running scheduled scan...');
+        await scanBookings();
+    }, 1 * 60 * 1000); // 5 minutes in milliseconds
+}
+
+// Start the continuous scanning when the server starts
+startContinuousScanning();
+
+// Simplified API endpoint (optional, for manual triggers)
+module.exports = async (req, res) => {
+    if (req.method === 'GET') {
+        return res.status(200).json({ 
+            message: 'Scanner is running continuously' 
+        });
+    }
+    return res.status(405).json({ error: 'Method not allowed' });
 };
