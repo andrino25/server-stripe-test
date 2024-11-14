@@ -66,7 +66,7 @@
     "setprototypeof": "^1.2.0",
     "side-channel": "^1.0.6",
     "statuses": "^2.0.1",
-    "stripe": "^17.2.0",
+    "stripe": "^17.3.1",
     "toidentifier": "^1.0.1",
     "type-is": "^1.6.18",
     "undici-types": "^6.19.8",
@@ -79,5 +79,11 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "functions": {
+    "source": "functions"
+  },
+  "projects": {
+    "default": "peopleconnect-aaf57"
+  }
 }
