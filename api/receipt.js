@@ -123,7 +123,7 @@ async function generateReceipt(paymentIntent, isProvider = false) {
                 doc.text(`Amount Received: PHP ${paymentIntent.metadata.providerReceievedPHP || (paymentIntent.amount / 100)}`, leftX + 10)
                    .moveDown(0.5);
             } else {
-                doc.text(`Amount Paid: PHP ${paymentIntent.metadata.originalAmountPHP || (paymentIntent.amount / 100)}`, leftX + 10)
+                doc.text(`Amount Paid: PHP ${paymentIntent.metadata.totalAmountPHP || (paymentIntent.amount / 100)}`, leftX + 10)
                    .moveDown(0.5);
             }
 
