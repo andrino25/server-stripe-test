@@ -20,9 +20,10 @@ const db = admin.database();
 // Function to send receipt
 async function sendReceipt(paymentId) {
     try {
-        // Get payment details
+        // Retrieve payment details from Stripe using payment ID
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentId);
 
+        // Only proceed if the payment is successful
         if (paymentIntent.status !== 'succeeded') {
             console.log(`Payment ${paymentId} not succeeded, skipping receipt`);
             return;
@@ -34,7 +35,7 @@ async function sendReceipt(paymentId) {
             return;
         }
 
-        // Create invoice with detailed information
+        // Create an invoice with detailed information, including metadata fields
         const invoice = await stripe.invoices.create({
             customer: paymentIntent.customer,
             collection_method: 'send_invoice',
@@ -48,7 +49,7 @@ async function sendReceipt(paymentId) {
             description: `Receipt for ${paymentIntent.metadata.serviceOffered || 'Service'}`
         });
 
-        // Finalize and send
+        // Finalize and send the invoice to the provider's email
         await stripe.invoices.finalizeInvoice(invoice.id);
         await stripe.invoices.sendInvoice(invoice.id);
 
@@ -65,17 +66,17 @@ const bookingsRef = db.ref('bookings');
 
 bookingsRef.on('child_changed', async (snapshot) => {
     const booking = snapshot.val();
-    
-    // Check if booking status is Completed and has a payment ID
+
+    // Check if booking status is Completed and contains a payment ID
     if (booking.bookingStatus === 'Completed' && booking.bookingPaymentId) {
         console.log(`Processing completed booking: ${snapshot.key}`);
-        
+
         try {
-            // Send receipt
+            // Send the receipt by calling the sendReceipt function
             const sent = await sendReceipt(booking.bookingPaymentId);
-            
+
             if (sent) {
-                // Update booking to mark receipt as sent (optional)
+                // Update the booking to mark that receipt has been sent (optional)
                 await snapshot.ref.update({
                     receiptSent: true,
                     receiptSentDate: new Date().toISOString()
@@ -87,7 +88,7 @@ bookingsRef.on('child_changed', async (snapshot) => {
     }
 });
 
-// Keep the original endpoint for manual receipt sending
+// Manual endpoint to send receipt
 module.exports = async (req, res) => {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
@@ -101,7 +102,7 @@ module.exports = async (req, res) => {
 
     try {
         const sent = await sendReceipt(paymentId);
-        
+
         if (sent) {
             return res.status(200).json({ 
                 message: 'Receipt sent successfully'
