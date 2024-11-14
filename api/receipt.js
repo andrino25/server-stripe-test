@@ -43,9 +43,17 @@ async function sendReceipt(paymentId) {
             return false;
         }
 
+        // First, create or retrieve a customer with the provider's email
+        let customer = await stripe.customers.create({
+            email: providerEmail,
+            metadata: {
+                isProvider: true
+            }
+        });
+
         // Create an invoice with detailed information
         const invoice = await stripe.invoices.create({
-            customer: paymentIntent.customer,
+            customer: customer.id,
             collection_method: 'send_invoice',
             days_until_due: 30,
             custom_fields: [
@@ -56,17 +64,16 @@ async function sendReceipt(paymentId) {
             ],
             description: `Receipt for ${paymentIntent.metadata.serviceOffered || 'Service'}`,
             metadata: {
-                providerEmail: providerEmail // Store provider email in metadata
+                providerEmail: providerEmail,
+                paymentIntentId: paymentId
             }
         });
 
         // Finalize the invoice
         await stripe.invoices.finalizeInvoice(invoice.id);
 
-        // Send the invoice to the provider's email
-        await stripe.invoices.sendInvoice(invoice.id, {
-            email: providerEmail // Specify the recipient email here
-        });
+        // Send the invoice (no email parameter needed)
+        await stripe.invoices.sendInvoice(invoice.id);
 
         console.log(`Receipt sent successfully to ${providerEmail} for payment ${paymentId}`);
         return true;
