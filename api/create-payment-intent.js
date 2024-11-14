@@ -62,7 +62,6 @@ module.exports = async (req, res) => {
             clientSecret: paymentIntent.client_secret,
             ephemeralKey: ephemeralKey.secret,
             customerId: customer.id,
-            providerEmail: paymentIntent.metadata.providerEmail,
             paymentId: paymentIntent.id,
             paymentMethod: paymentIntent.metadata.paymentMethod,
             paymentDate: paymentIntent.metadata.paymentDate,
