@@ -36,7 +36,7 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-async function generateReceipt(paymentIntent) {
+async function generateReceipt(paymentIntent, isProvider = false) {
     return new Promise(async (resolve, reject) => {
         try {
             const doc = new PDFDocument({
@@ -116,16 +116,22 @@ async function generateReceipt(paymentIntent) {
             const paymentY = doc.y + 20;
 
             doc.text('Payment Details:', leftX + 10, paymentY, { bold: true })
-            .moveDown(0.5);
+               .moveDown(0.5);
 
-            doc.text(`Amount Paid: PHP ${paymentIntent.metadata.providerReceievedPHP || (paymentIntent.amount / 100)}`, leftX + 10)
-            .moveDown(0.5);
+            // Different amount label and value based on recipient
+            if (isProvider) {
+                doc.text(`Amount Received: PHP ${paymentIntent.metadata.providerReceievedPHP || (paymentIntent.amount / 100)}`, leftX + 10)
+                   .moveDown(0.5);
+            } else {
+                doc.text(`Amount Paid: PHP ${paymentIntent.metadata.originalAmountPHP || (paymentIntent.amount / 100)}`, leftX + 10)
+                   .moveDown(0.5);
+            }
 
             doc.text(`Payment Date: ${paymentIntent.metadata.paymentDate || new Date().toISOString()}`, leftX + 10)
-            .moveDown(0.5);
+               .moveDown(0.5);
 
             doc.text(`Payment Method: Credit Card`, leftX + 10)
-            .moveDown(0.5);
+               .moveDown(0.5);
 
             // Footer
             doc.fontSize(10)
@@ -145,7 +151,6 @@ async function generateReceipt(paymentIntent) {
 async function sendReceipt(paymentId) {
     console.log('🟡 Starting receipt process for payment:', paymentId);
     try {
-        // Add expand: ['customer'] to get customer details
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentId, {
             expand: ['customer']
         });
@@ -170,14 +175,15 @@ async function sendReceipt(paymentId) {
             return false;
         }
 
-        // Generate PDF receipt
-        console.log('🟡 Generating receipt PDF...');
-        const pdfBuffer = await generateReceipt(paymentIntent);
+        // Generate two different PDF receipts
+        console.log('🟡 Generating receipt PDFs...');
+        const customerPdfBuffer = await generateReceipt(paymentIntent, false);
+        const providerPdfBuffer = await generateReceipt(paymentIntent, true);
 
         // Send email to both provider and customer
         console.log('🟡 Sending receipt emails...');
         await Promise.all([
-            // Send to provider
+            // Send to provider with provider receipt
             transporter.sendMail({
                 from: process.env.EMAIL_USER,
                 to: providerEmail,
@@ -185,11 +191,11 @@ async function sendReceipt(paymentId) {
                 text: `Thank you for providing your service. Please find your payment receipt attached.`,
                 attachments: [{
                     filename: 'receipt.pdf',
-                    content: pdfBuffer,
+                    content: providerPdfBuffer,
                     contentType: 'application/pdf'
                 }]
             }),
-            // Send to customer
+            // Send to customer with customer receipt
             transporter.sendMail({
                 from: process.env.EMAIL_USER,
                 to: customerEmail,
@@ -197,7 +203,7 @@ async function sendReceipt(paymentId) {
                 text: `Thank you for using our service. Please find your payment receipt attached.`,
                 attachments: [{
                     filename: 'receipt.pdf',
-                    content: pdfBuffer,
+                    content: customerPdfBuffer,
                     contentType: 'application/pdf'
                 }]
             })
