@@ -48,7 +48,7 @@ async function generateReceipt(paymentIntent) {
             doc.on('end', () => resolve(Buffer.concat(chunks)));
 
             // Add company logo
-            const imagePath = path.join(__dirname, '../image.png');
+            const imagePath = path.join(__dirname, 'image.png');
 
             // Add company logo
             doc.image(imagePath, 50, 45, { width: 150 })  
