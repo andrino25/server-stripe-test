@@ -7,6 +7,7 @@ const { getDatabase, ref, onChildChanged, get, update } = require('firebase/data
 const PDFDocument = require('pdfkit');
 const path = require('path');
 const nodemailer = require('nodemailer');
+const axios = require('axios');
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -36,7 +37,7 @@ const transporter = nodemailer.createTransport({
 });
 
 async function generateReceipt(paymentIntent) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
         try {
             const doc = new PDFDocument({
                 size: 'A4',
@@ -47,11 +48,21 @@ async function generateReceipt(paymentIntent) {
             doc.on('data', chunk => chunks.push(chunk));
             doc.on('end', () => resolve(Buffer.concat(chunks)));
 
-            // Use Google Drive image URL
-            const imageUrl = 'https://drive.google.com/uc?export=view&id=1ne2-uU0H9W3OZTSymeO8nMbiZPc_Fhd4';
-            
-            doc.image(imageUrl, 50, 45, { width: 150 })
-               .moveDown();
+            // Fetch image from Google Drive
+            try {
+                const imageUrl = 'https://drive.google.com/uc?export=view&id=1ne2-uU0H9W3OZTSymeO8nMbiZPc_Fhd4';
+                const response = await axios.get(imageUrl, {
+                    responseType: 'arraybuffer'
+                });
+                
+                // Add the image to the PDF
+                doc.image(response.data, 50, 45, { width: 150 })
+                   .moveDown();
+            } catch (imageError) {
+                console.error('❌ Error loading logo:', imageError);
+                // Continue without logo if there's an error
+                doc.moveDown(2);
+            }
 
             // Add receipt header
             doc.fontSize(20)
