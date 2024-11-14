@@ -47,11 +47,10 @@ async function generateReceipt(paymentIntent) {
             doc.on('data', chunk => chunks.push(chunk));
             doc.on('end', () => resolve(Buffer.concat(chunks)));
 
-            // Add company logo
-            const imagePath = path.join(__dirname, 'image.png');
-
-            // Add company logo
-            doc.image(imagePath, 50, 45, { width: 150 })  
+            // Use Google Drive image URL
+            const imageUrl = 'https://drive.google.com/uc?export=view&id=1ne2-uU0H9W3OZTSymeO8nMbiZPc_Fhd4';
+            
+            doc.image(imageUrl, 50, 45, { width: 150 })
                .moveDown();
 
             // Add receipt header
