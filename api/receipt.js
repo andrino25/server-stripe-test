@@ -47,7 +47,7 @@ async function generateReceipt(paymentIntent) {
             doc.on('end', () => resolve(Buffer.concat(chunks)));
 
             // Add company logo
-            doc.image('./api/image.png', 50, 45, { width: 100 })  
+            doc.image('./image.png', 50, 45, { width: 150 })  
                .moveDown();
 
             // Add receipt header
