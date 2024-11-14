@@ -66,7 +66,6 @@ module.exports = async (req, res) => {
             paymentMethod: paymentIntent.metadata.paymentMethod,
             paymentDate: paymentIntent.metadata.paymentDate,
             originalAmount: amount,
-            commissionAmount: amount * commissionRate,
             totalAmount: amount + (amount * commissionRate),
             currency: 'php',
             status: paymentIntent.status
