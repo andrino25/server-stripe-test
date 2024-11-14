@@ -3,11 +3,11 @@ dotenv.config();
 
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { initializeApp } = require('firebase/app');
-const { getDatabase, ref, onChildChanged, get, update } = require('firebase/database');
+const { getDatabase, ref, onChildChanged, update } = require('firebase/database');
 const PDFDocument = require('pdfkit');
 const nodemailer = require('nodemailer');
 
-// Your Firebase configuration
+// Firebase configuration
 const firebaseConfig = {
     apiKey: process.env.FIREBASE_API_KEY,
     authDomain: process.env.FIREBASE_AUTH_DOMAIN,
@@ -37,94 +37,44 @@ const transporter = nodemailer.createTransport({
 async function generateReceipt(paymentIntent) {
     return new Promise((resolve, reject) => {
         try {
-            const doc = new PDFDocument({
-                size: 'A4',
-                margin: 50
-            });
-
+            const doc = new PDFDocument({ size: 'A4', margin: 50 });
             const chunks = [];
             doc.on('data', chunk => chunks.push(chunk));
             doc.on('end', () => resolve(Buffer.concat(chunks)));
 
-            // Add company logo
-            doc.image('api/image.png', 50, 45, { width: 100 })  
-               .moveDown();
+            doc.image('api/image.png', 50, 45, { width: 100 }).moveDown();
+            doc.fontSize(20).text('PAYMENT RECEIPT', { align: 'center' }).moveDown();
+            doc.moveTo(50, 160).lineTo(550, 160).stroke().moveDown();
 
-            // Add receipt header
-            doc.fontSize(20)
-               .text('PAYMENT RECEIPT', { align: 'center' })
-               .moveDown();
-
-            // Add horizontal line
-            doc.moveTo(50, 160)
-               .lineTo(550, 160)
-               .stroke()
-               .moveDown();
-
-            // Receipt details in a more structured format
             doc.fontSize(12);
-
-            // Left column
             const leftX = 50;
             const rightX = 300;
-            
-            doc.text('Receipt Details:', leftX, 180, { bold: true })
-               .moveDown(0.5);
-            
-            doc.text(`Receipt No: ${paymentIntent.id}`, leftX)
-               .moveDown(0.5);
-            
+
+            doc.text('Receipt Details:', leftX, 180, { bold: true }).moveDown(0.5);
+            doc.text(`Receipt No: ${paymentIntent.id}`, leftX).moveDown(0.5);
             doc.text(`Date: ${new Date().toLocaleDateString('en-US', {
                 year: 'numeric',
                 month: 'long',
                 day: 'numeric'
-            })}`, leftX)
-               .moveDown(0.5);
+            })}`, leftX).moveDown(0.5);
+            doc.text(`Payment Status: Successful`, leftX).moveDown(2);
 
-            doc.text(`Payment Status: Successful`, leftX)
-               .moveDown(2);
+            doc.text('Service Details:', leftX, doc.y, { bold: true }).moveDown(0.5);
+            doc.text(`Service: ${paymentIntent.metadata.serviceOffered || 'Service'}`, leftX).moveDown(0.5);
+            doc.text(`Provider: ${paymentIntent.metadata.providerName || 'Provider'}`, leftX).moveDown(0.5);
 
-            // Service details
-            doc.text('Service Details:', leftX, doc.y, { bold: true })
-               .moveDown(0.5);
-            
-            doc.text(`Service: ${paymentIntent.metadata.serviceOffered || 'Service'}`, leftX)
-               .moveDown(0.5);
-            
-            doc.text(`Provider: ${paymentIntent.metadata.providerName || 'Provider'}`, leftX)
-               .moveDown(0.5);
-
-            // Payment details in a box
             doc.rect(50, doc.y, 500, 100).stroke();
             const paymentY = doc.y + 20;
 
-            doc.text('Payment Details:', leftX + 10, paymentY, { bold: true })
-               .moveDown(0.5);
-            
-            doc.text(`Amount Paid:`, leftX + 10)
-               .text(`PHP ${paymentIntent.metadata.originalAmountPHP || (paymentIntent.amount / 100)}`, rightX)
-               .moveDown(0.5);
-            
-            doc.text(`Payment Date:`, leftX + 10)
-               .text(`${paymentIntent.metadata.paymentDate || new Date().toISOString()}`, rightX)
-               .moveDown(0.5);
-            
-            doc.text(`Payment Method:`, leftX + 10)
-               .text('Credit Card', rightX)
-               .moveDown(2);
+            doc.text('Payment Details:', leftX + 10, paymentY, { bold: true }).moveDown(0.5);
+            doc.text(`Amount Paid:`, leftX + 10).text(`PHP ${paymentIntent.metadata.originalAmountPHP || (paymentIntent.amount / 100)}`, rightX).moveDown(0.5);
+            doc.text(`Payment Date:`, leftX + 10).text(`${paymentIntent.metadata.paymentDate || new Date().toISOString()}`, rightX).moveDown(0.5);
+            doc.text(`Payment Method:`, leftX + 10).text('Credit Card', rightX).moveDown(2);
 
-            // Footer
             doc.fontSize(10)
-               .text('Thank you for your business!', { align: 'center' })
-               .moveDown(0.5);
-            
-            doc.text('For any questions, please contact support@yourcompany.com', { align: 'center' })
-               .moveDown(0.5);
-            
-            doc.text('This is a computer-generated receipt and requires no signature.', { 
-                align: 'center',
-                italics: true 
-            });
+               .text('Thank you for your business!', { align: 'center' }).moveDown(0.5);
+            doc.text('For any questions, please contact support@yourcompany.com', { align: 'center' }).moveDown(0.5);
+            doc.text('This is a computer-generated receipt and requires no signature.', { align: 'center', italics: true });
 
             doc.end();
         } catch (err) {
@@ -137,29 +87,13 @@ async function sendReceipt(paymentId) {
     console.log('🟡 Starting receipt process for payment:', paymentId);
     try {
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentId);
-        console.log('📌 Retrieved payment intent:', {
-            status: paymentIntent.status,
-            email: paymentIntent.metadata.providerEmail,
-            amount: paymentIntent.amount
-        });
-
-        if (paymentIntent.status !== 'succeeded') {
-            console.log('❌ Payment not succeeded:', paymentId);
-            return false;
-        }
+        if (paymentIntent.status !== 'succeeded') return false;
 
         const providerEmail = paymentIntent.metadata.providerEmail;
-        if (!providerEmail) {
-            console.log('❌ No provider email found:', paymentId);
-            return false;
-        }
+        if (!providerEmail) return false;
 
-        // Generate PDF receipt
-        console.log('🟡 Generating receipt PDF...');
         const pdfBuffer = await generateReceipt(paymentIntent);
 
-        // Send email with PDF attachment
-        console.log('🟡 Sending receipt email...');
         await transporter.sendMail({
             from: process.env.EMAIL_USER,
             to: providerEmail,
@@ -180,70 +114,24 @@ async function sendReceipt(paymentId) {
     }
 }
 
-// Scan all bookings function
-async function scanBookings() {
-    try {
-        console.log('🔍 Starting booking scan...');
-        const snapshot = await get(ref(database, 'bookings'));
-        const bookings = snapshot.val();
-        
-        if (!bookings) {
-            console.log('ℹ️ No bookings found');
-            return;
+// Real-time listener for booking changes
+onChildChanged(bookingsRef, async (snapshot) => {
+    const bookingId = snapshot.key;
+    const booking = snapshot.val();
+
+    if (booking.bookingStatus === 'Completed' && booking.bookingPaymentId && !booking.receiptSent) {
+        console.log('🟢 Processing completed booking:', bookingId);
+        const sent = await sendReceipt(booking.bookingPaymentId);
+
+        if (sent) {
+            const bookingRef = ref(database, `bookings/${bookingId}`);
+            await update(bookingRef, {
+                receiptSent: true,
+                receiptSentDate: new Date().toISOString()
+            });
+            console.log('✅ Receipt sent and booking updated:', bookingId);
         }
-
-        console.log(`📦 Found ${Object.keys(bookings).length} total bookings`);
-
-        for (const [bookingId, booking] of Object.entries(bookings)) {
-            console.log(`\n🔍 Checking booking: ${bookingId}`);
-            
-            if (booking.bookingStatus === 'Completed' && 
-                booking.bookingPaymentId && 
-                !booking.receiptSent) {
-                
-                console.log('🟢 Processing completed booking:', bookingId);
-                const sent = await sendReceipt(booking.bookingPaymentId);
-                
-                if (sent) {
-                    const bookingRef = ref(database, `bookings/${bookingId}`);
-                    await update(bookingRef, {
-                        receiptSent: true,
-                        receiptSentDate: new Date().toISOString()
-                    });
-                    console.log('✅ Receipt sent and booking updated:', bookingId);
-                }
-            }
-        }
-        
-        console.log('\n✅ Scan completed');
-    } catch (err) {
-        console.error('❌ Error scanning bookings:', err);
     }
-}
+});
 
-// Function to run continuous scanning
-async function startContinuousScanning() {
-    console.log('🚀 Starting continuous booking scanner...');
-    
-    // Run first scan immediately
-    await scanBookings();
-    
-    // Set up interval for subsequent scans (every 5 seconds)
-    setInterval(async () => {
-        console.log('⏰ Running scheduled scan...');
-        await scanBookings();
-    }, 5 * 1000); // 5 seconds in milliseconds
-}
-
-// Start the continuous scanning when the server starts
-startContinuousScanning();
-
-// Simplified API endpoint (optional, for manual triggers)
-module.exports = async (req, res) => {
-    if (req.method === 'GET') {
-        return res.status(200).json({ 
-            message: 'Scanner is running continuously' 
-        });
-    }
-    return res.status(405).json({ error: 'Method not allowed' });
-};
+console.log('🚀 Server is up and listening for booking status changes');
