@@ -27,7 +27,7 @@ module.exports = async (req, res) => {
 
     try {
         const amountInCentavos = Math.round(amount * 100);
-        const commissionRate = 0.15;
+        const commissionRate = 0.05;
         const commissionAmountCentavos = Math.round(amountInCentavos * commissionRate);
         const totalAmountCentavos = amountInCentavos + commissionAmountCentavos;
 
